@@ -2,6 +2,7 @@ import polars as pl
 import pyspark.sql as pssql
 import pysparkpl.sql.types as types
 import pyspark as ps
+import pandas as pd
 from pysparkpl.sql.sparksession import SparkSession
 from tests.utils import spark_to_pl
 
@@ -79,6 +80,34 @@ def test_sparksession():
         pl.DataFrame({"a": [1, 3], "b": [2, 4]})
     )
     assert df._df.collect().frame_equal(spark_to_pl(sp_df))
+
+    df = sprkpl.createDataFrame([[1, 2], [3, 4]], schema=["a", "a"])
+    assert df.toPandas().columns.tolist() == ["a", "a"]
+    assert df.columns == ["a", "a"]
+
+    df = sprkpl.createDataFrame([[1, 2], [3, 4]], schema=["a", "b"])
+    assert df.toPandas().columns.tolist() == ["a", "b"]
+
+    df = sprkpl.createDataFrame([[1, 2], [3, 4]])
+    assert df.toPandas().columns.to_list() == ["_1", "_2"]
+
+    schema = types.StructType(
+        [
+            types.StructField("a", types.IntegerType()),
+            types.StructField("b", types.IntegerType()),
+        ]
+    )
+    df = sprkpl.createDataFrame([[1, 2], [3, 4]], schema=schema)
+    assert df.schema == schema
+
+    schema = types.StructType(
+        [
+            types.StructField("a", types.IntegerType()),
+            types.StructField("a", types.IntegerType()),
+        ]
+    )
+    df = sprkpl.createDataFrame([[1, 2], [3, 4]], schema=schema)
+    assert df.schema == schema
 
 
 if __name__ == "__main__":

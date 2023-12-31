@@ -1,1 +1,1 @@
-from .sparksession import SparkSession
+from pysparkpl.sql.sparksession import SparkSession, SessionHelper

@@ -48,6 +48,40 @@ type_mapping = {
     ArrayType(ByteType()): pl.List(pl.Int8),
 }
 
+reverse_type_mapping = {
+    pl.Utf8: StringType(),
+    pl.Int32: IntegerType(),
+    pl.Int64: LongType(),
+    pl.Float32: FloatType(),
+    pl.Float64: DoubleType(),
+    pl.Boolean: BooleanType(),
+    pl.Date: DateType(),
+    pl.Null: NullType(),
+    pl.Binary: BinaryType(),
+    pl.Int16: ShortType(),
+    pl.Int8: ByteType(),
+    pl.List(pl.Utf8): ArrayType(StringType()),
+    pl.List(pl.Int32): ArrayType(IntegerType()),
+    pl.List(pl.Int64): ArrayType(LongType()),
+    pl.List(pl.Float32): ArrayType(FloatType()),
+    pl.List(pl.Float64): ArrayType(DoubleType()),
+    pl.List(pl.Boolean): ArrayType(BooleanType()),
+    pl.List(pl.Date): ArrayType(DateType()),
+    pl.List(pl.Null): ArrayType(NullType()),
+    pl.List(pl.Binary): ArrayType(BinaryType()),
+    pl.List(pl.Int16): ArrayType(ShortType()),
+    pl.List(pl.Int8): ArrayType(ByteType()),
+}
+
+_pl_numeric_types = {
+    pl.Int8,
+    pl.Int16,
+    pl.Int32,
+    pl.Int64,
+    pl.Float32,
+    pl.Float64,
+}
+
 _type_name_to_dtype = {
     "string": StringType(),
     "int": IntegerType(),
@@ -82,3 +116,7 @@ def map_type(
         return type_mapping[t]
     else:
         raise NotImplementedError(f"Type {t} is not supported")
+
+
+def pl_is_numeric_type(t: pl.datatypes.classes.DataTypeClass) -> bool:
+    return t in _pl_numeric_types
