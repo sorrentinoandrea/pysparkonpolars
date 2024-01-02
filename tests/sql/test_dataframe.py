@@ -79,6 +79,19 @@ def create_test_df_2(spark):
     return spark.createDataFrame(pd.DataFrame({"a": a, "b": b, "c": c}))
 
 
+def test_collect():
+    spark = SessionHelper.session(
+        SessionHelper.Engine.SPARK
+    ).builder.getOrCreate()
+    sparkpl = SessionHelper.session(
+        SessionHelper.Engine.POLARS
+    ).builder.getOrCreate()
+    sp_df = create_test_df_1(spark).select(["a", "b", "c"])
+    pl_df = create_test_df_1(sparkpl).select(["a", "b", "c"])
+    assert compare_pl_spark(pl_df, sp_df)
+    assert sp_df.collect() == pl_df.collect()
+
+
 def _test_select(spark):
     df = create_test_df_1(spark)
     rv = []
@@ -507,6 +520,17 @@ def _create_test_dfs_for_join_2(spark):
     return dfl, dfr
 
 
+def _create_test_dfs_for_join_3(spark):
+    dfl = spark.createDataFrame(
+        [["A", 2, 3], ["B", 5, 6], ["C", 2, 3], ["C", 2, 3]], ["a", "b", "c"]
+    )
+    dfr = spark.createDataFrame(
+        [["A", 2, 3], ["B", 5, 6], ["D", 2, 3], ["D", 2, 3]], ["a", "d", "e"]
+    )
+
+    return dfl, dfr
+
+
 def _test_join_1(spark):
     dfl, dfr = _create_test_dfs_for_join_1(spark)
     rv = []
@@ -574,6 +598,25 @@ def _test_join_2(spark):
     return rv
 
 
+def _test_join_3(spark):
+    dfl, dfr = _create_test_dfs_for_join_3(spark)
+    rv = []
+    [
+        rv.append(
+            dfl.join(dfr, dfl.a == dfr.a if h != "cross" else None, how=h)
+        )
+        for h in [
+            "inner",
+            "outer",
+            "right",
+            "semi",
+            "anti",
+        ]
+    ]
+
+    return rv
+
+
 def run_compare_test(dfs_generator):
     # genreates dataframes using the given generator with polars and spark
     # as engines and compares the results
@@ -625,7 +668,13 @@ def test_join_2():
     run_compare_test(_test_join_2)
 
 
+def test_join_3():
+    run_compare_test(_test_join_3)
+
+
 if __name__ == "__main__":
+    test_collect()
+    test_join_3()
     test_join_2()
     test_join_1()
     test_groupBy_2()

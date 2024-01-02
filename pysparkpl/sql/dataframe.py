@@ -118,7 +118,8 @@ class DataFrame:
 
     def collect(self):
         row = Row(*self._df.columns)
-        return [row(*r) for r in self._df.collect()]
+        df = self.toPandas()
+        return [row(*r) for r in df.to_records(index=False)]
 
     def toPandas(self):
         df = self._df.collect().to_pandas()
@@ -252,11 +253,28 @@ class DataFrame:
         left_on, right_on, left_condition, right_condition = _breakdown_on_expr(
             on, self, other
         )
+        if how == "anti":
+            if left_condition:
+                left_condition = ~left_condition
+            if right_condition:
+                right_condition = ~right_condition
+            h = "semi"
+        else:
+            h = how
+
+        if h not in ["inner", "semi", "cross"] and (
+            left_condition is not None or right_condition is not None
+        ):
+            raise ValueError(
+                "only inner, semi and cross joins support same dataframe conditions"
+            )
+
         suffix = "_duplicated_suffix"
         column_names_map = {
             f"{c}{suffix}": c
             for c in set(self._df.columns).intersection(other._df.columns)
         }
+        inverted_column_names_map = {v: k for k, v in column_names_map.items()}
         dfl = (
             self._df
             if left_condition is None
@@ -273,12 +291,23 @@ class DataFrame:
         dfr = dfr.with_columns(
             [c._expr.alias(f"join_col_{i}") for i, c in enumerate(right_on)]
         )
-        joined = dfl.join(
-            dfr,
-            [f"join_col_{i}" for i in range(len(left_on))],
-            how=how,
-            suffix=suffix,
-        ).drop([f"join_col_{i}" for i in range(len(left_on))])
+        if h == "right":
+            joined = dfr.join(
+                dfl,
+                [f"join_col_{i}" for i in range(len(right_on))],
+                how="left",
+                suffix=suffix,
+            ).select(
+                self.columns
+                + [inverted_column_names_map.get(c, c) for c in other.columns]
+            )
+        else:
+            joined = dfl.join(
+                dfr,
+                [f"join_col_{i}" for i in range(len(left_on))],
+                how=h,
+                suffix=suffix,
+            ).drop([f"join_col_{i}" for i in range(len(left_on))])
         return DataFrame(joined, column_names_map=column_names_map)
 
     @property
