@@ -8,7 +8,7 @@ import pysparkpl.sql.types as types
 import pyspark.sql.types as pssql_types
 
 """
-A pyspark like DataFrame API on top of polars.
+A pyspark-like DataFrame API on top of polars.
 """
 
 
