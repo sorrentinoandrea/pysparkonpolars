@@ -52,7 +52,7 @@ class Column:
         )
         self._on_df = on_df
         self._op = op
-
+   
     def asc(self):
         return self.asc_nulls_first()
 

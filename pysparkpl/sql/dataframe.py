@@ -8,7 +8,7 @@ import pysparkpl.sql.types as types
 import pyspark.sql.types as pssql_types
 
 """
-A pyspark like DataFrame API on top of polars.
+A pyspark-like DataFrame API on top of polars.
 """
 
 
@@ -219,7 +219,7 @@ class DataFrame:
                 )
         if isinstance(on, col):
             return self._join_on_expr(other, on, how)
-        suffix = "_duplicated_suffix"
+        suffix = "__on_df__" + hex(id(other))
         column_names_map = {
             f"{c}{suffix}": c
             for c in set(self._df.columns)
@@ -233,7 +233,7 @@ class DataFrame:
 
         on = [c._expr_no_alias if isinstance(c, col) else c for c in on]
 
-        if how == "right":
+        if how == "right" and on:
             joined = other._df.join(
                 self._df, on, how="left", suffix=suffix
             ).select(
@@ -242,8 +242,14 @@ class DataFrame:
                 + [c for c in other.columns if c not in on]
             )
         else:
-            h = how
-            joined = self._df.join(other._df, on, how=h, suffix=suffix)
+            if on:
+                joined = self._df.join(other._df, on, how=how, suffix=suffix)
+            elif how not in ["semi", "anti"]:
+                joined = self._df.join(other._df, how="cross", suffix=suffix)
+            elif how == "semi":
+                joined = self._df
+            else:
+                joined = pl.DataFrame([], schema=self._df.schema)
         return DataFrame(
             joined,
             column_names_map=column_names_map,
@@ -253,23 +259,7 @@ class DataFrame:
         left_on, right_on, left_condition, right_condition = _breakdown_on_expr(
             on, self, other
         )
-        if how == "anti":
-            if left_condition:
-                left_condition = ~left_condition
-            if right_condition:
-                right_condition = ~right_condition
-            h = "semi"
-        else:
-            h = how
-
-        if h not in ["inner", "semi", "cross"] and (
-            left_condition is not None or right_condition is not None
-        ):
-            raise ValueError(
-                "only inner, semi and cross joins support same dataframe conditions"
-            )
-
-        suffix = "_duplicated_suffix"
+        suffix = "__on_df__" + hex(id(other))
         column_names_map = {
             f"{c}{suffix}": c
             for c in set(self._df.columns).intersection(other._df.columns)
@@ -285,27 +275,24 @@ class DataFrame:
             if right_condition is None
             else other._df.filter(right_condition._expr)
         )
-        dfl = dfl.with_columns(
-            [c._expr.alias(f"join_col_{i}") for i, c in enumerate(left_on)]
-        )
-        dfr = dfr.with_columns(
-            [c._expr.alias(f"join_col_{i}") for i, c in enumerate(right_on)]
-        )
-        if h == "right":
-            joined = dfr.join(
-                dfl,
-                [f"join_col_{i}" for i in range(len(right_on))],
-                how="left",
-                suffix=suffix,
-            ).select(
-                self.columns
-                + [inverted_column_names_map.get(c, c) for c in other.columns]
-            )
+        if len(left_on) == 0:
+            if how not in ["semi", "anti"]:
+                joined = dfl.join(dfr, how="cross")
+            elif how == "semi":
+                joined = dfl
+            else:
+                joined = pl.DataFrame([], schema=dfl.schema)
         else:
+            dfl = dfl.with_columns(
+                [c._expr.alias(f"join_col_{i}") for i, c in enumerate(left_on)]
+            )
+            dfr = dfr.with_columns(
+                [c._expr.alias(f"join_col_{i}") for i, c in enumerate(right_on)]
+            )
             joined = dfl.join(
                 dfr,
                 [f"join_col_{i}" for i in range(len(left_on))],
-                how=h,
+                how=how,
                 suffix=suffix,
             ).drop([f"join_col_{i}" for i in range(len(left_on))])
         return DataFrame(joined, column_names_map=column_names_map)
@@ -342,6 +329,13 @@ class DataFrame:
     def __getattr__(self, name: str):
         return col(name, on_df=self)
 
+    def __getitem__(self, item: Union[str, col]):
+        if isinstance(item, str):
+            return col(item, on_df=self)
+        if isinstance(item, col):
+            return col(item._name, on_df=self)
+        raise ValueError("item should be a string or a Column")
+
 
 def _extract_columns(column: col) -> List[col]:
     rv = []
@@ -371,7 +365,7 @@ def _breakdown_on_expr(e: col, dfl, dfr):
 
     if e._op is None:
         return left_on + [e], right_on + [e], None, None
-    if e._op[-1] not in ["__eq__", "__and__"]:
+    if e._op[-1] not in ["__eq__", "__and__"] and len(_dfs_in_expr(e)) > 1:
         raise ValueError(
             "Conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
         )
