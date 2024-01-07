@@ -1,5 +1,6 @@
 import polars as pl
 from pysparkpl.sql.column import Column
+from pysparkpl.sql.sparksession import SessionHelper
 
 
 def test_column_1():
@@ -33,6 +34,16 @@ def test_column_1():
     assert (Column("a").astype("boolean"))._name == "CAST(a AS BOOLEAN)"
     assert (Column("a").astype("date"))._name == "CAST(a AS DATE)"
 
+def test_col_from_df():
+    pl_spark = SessionHelper.session(SessionHelper.Engine.POLARS)
+    df = pl_spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+    assert df.a._name == "a"
+    assert df.b._name == "b"
+    assert df.a._on_df == df
+    assert df["a"]._name == "a"
+    assert df["b"]._name == "b"
+    assert df["a"]._on_df == df
 
 if __name__ == "__main__":
+    test_col_from_df()
     test_column_1()
