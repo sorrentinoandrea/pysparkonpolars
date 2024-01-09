@@ -275,9 +275,15 @@ class DataFrame:
         )
 
     def _join_on_expr(self, other: "DataFrame", on: col, how="inner"):
-        left_on, right_on, left_condition, right_condition = _breakdown_on_expr(
-            on, self, other
-        )
+        try:
+            (
+                left_on,
+                right_on,
+                left_condition,
+                right_condition,
+            ) = _breakdown_on_expr(on, self, other)
+        except UnsupportedJoinConditionError:
+            return self._join_on_expr_with_cross_join(other, on, how)
         dfl = self if left_condition is None else self.filter(left_condition)
         dfr = (
             other if right_condition is None else other.filter(right_condition)
@@ -315,6 +321,9 @@ class DataFrame:
                     how=how,
                 ).drop([f"join_col_{i}" for i in range(len(left_on))])
         return DataFrame(joined)
+
+    def _join_on_expr_with_cross_join(self, other, on: col, how="inner"):
+        return self.join(other, how="cross").filter(on)
 
     @property
     def columns(self):
@@ -368,10 +377,6 @@ def _extract_columns(column: col) -> List[col]:
     return rv
 
 
-def _dfs_in_expr(e: col):
-    return set([c._on_df for c in _extract_columns(e) if c._on_df is not None])
-
-
 def _is_expr_on_df(e: col, df: DataFrame):
     if e._op is None:
         return bool(
@@ -385,8 +390,8 @@ def _is_expr_on_df(e: col, df: DataFrame):
     return any(matches)
 
 
-def is_cross_condition(e: col):
-    return len(_dfs_in_expr(e)) > 1
+class UnsupportedJoinConditionError(Exception):
+    pass
 
 
 def _breakdown_on_expr(e: col, dfl, dfr):
@@ -396,11 +401,7 @@ def _breakdown_on_expr(e: col, dfl, dfr):
     right_conditions = []
 
     if e._op is None:
-        raise ValueError(
-            "Join conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
-        )
-    if e._op[-1] not in ["__eq__", "__and__"] and len(_dfs_in_expr(e)) > 1:
-        raise ValueError(
+        raise UnsupportedJoinConditionError(
             "Join conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
         )
     conditions = []
@@ -425,7 +426,7 @@ def _breakdown_on_expr(e: col, dfl, dfr):
             right_conditions.append(c)
         else:
             if c._op[-1] != "__eq__":
-                raise ValueError(
+                raise UnsupportedJoinConditionError(
                     "Conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
                 )
             if (
@@ -445,7 +446,7 @@ def _breakdown_on_expr(e: col, dfl, dfr):
                 left_on.append(c._op[1])
                 right_on.append(c._op[0])
             else:
-                raise ValueError(
+                raise UnsupportedJoinConditionError(
                     "Conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
                 )
     left_condition = None if len(left_conditions) == 0 else left_conditions[0]

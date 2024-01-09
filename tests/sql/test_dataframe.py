@@ -655,6 +655,24 @@ def test_join_4():
         ps_dfj.select(ps_dfl.a.alias("c"), ps_dfl.b.alias("d")),
     )
 
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a > pl_dfr.a, how="inner").select(
+            pl_dfl.a.alias("c"), pl_dfl.b.alias("d")
+        ),
+        ps_dfl.join(ps_dfr, ps_dfl.a > ps_dfr.a, how="inner").select(
+            ps_dfl.a.alias("c"), ps_dfl.b.alias("d")
+        ),
+    )
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a >= pl_dfr.a, how="inner").select(
+            pl_dfl.a.alias("c"), pl_dfl.b.alias("d")
+        ),
+        ps_dfl.join(ps_dfr, ps_dfl.a >= ps_dfr.a, how="inner").select(
+            ps_dfl.a.alias("c"), ps_dfl.b.alias("d")
+        ),
+    )
+
 
 if __name__ == "__main__":
     test_join_4()
