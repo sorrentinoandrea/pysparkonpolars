@@ -4,37 +4,34 @@ from pysparkpl.sql.column import Column as col
 
 def sum(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(f"sum({c._name})", c._expr.sum().alias(f"sum({c._name})"))
+    return col(f"sum({c._build_display_name()})", op=(c, "sum"))
 
 
 def count(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(f"count({c._name})", c._expr.count().alias(f"count({c._name})"))
+    return col(f"count({c._build_display_name()})", op=(c, "count"))
 
 
 def avg(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(f"avg({c._name})", c._expr.mean().alias(f"avg({c._name})"))
+    return col(f"avg({c._build_display_name()})", op=(c, "avg"))
 
 
 def mean(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(f"avg({c._name})", c._expr.mean().alias(f"avg({c._name})"))
+    return col(f"avg({c._build_display_name()})", op=(c, "mean"))
 
 
 def min(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(f"min({c._name})", c._expr.min().alias(f"min({c._name})"))
+    return col(f"min({c._build_display_name()})", op=(c, "min"))
 
 
 def max(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(f"max({c._name})", c._expr.max().alias(f"max({c._name})"))
+    return col(f"max({c._build_display_name()})", op=(c, "max"))
 
 
 def countDistinct(c: Union[str, col]) -> col:
     c = c if isinstance(c, col) else col(c)
-    return col(
-        f"count({c._name})",
-        c._expr.n_unique().alias(f"count({c._name})"),
-    )
+    return col(f"count({c._build_display_name()})", op=(c, "countDistinct"))

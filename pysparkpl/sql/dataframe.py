@@ -1,9 +1,10 @@
-from typing import Union, Dict, Callable, List
+from typing import Union, Dict, Callable, List, Tuple, Set
 import re
 from collections import Iterable
 import polars as pl
 from pyspark.sql import Row
 from pysparkpl.sql.functions import col
+from pysparkpl.sql.column import _identify_column, _extract_name_and_from_dfs
 import pysparkpl.sql.types as types
 import pyspark.sql.types as pssql_types
 
@@ -18,9 +19,7 @@ class GroupedData(object):
     :func:`DataFrame.
     """
 
-    def __init__(
-        self, group_by: pl.dataframe.groupby.GroupBy, df: pl.LazyFrame
-    ):
+    def __init__(self, group_by: pl.dataframe.groupby.GroupBy, df: "DataFrame"):
         self._group_by = group_by
         self._df = df
 
@@ -33,18 +32,18 @@ class GroupedData(object):
         def _aggop(*cols: str):
             _cols = (
                 [
-                    getattr(pl.col(c), op_name)().alias(
-                        f"{target_op_name}({c})"
-                    )
+                    getattr(
+                        pl.col(_identify_column(c, self._df)), op_name
+                    )().alias(f"{target_op_name}({c})")
                     for c in cols
                 ]
                 if cols
                 else [
                     getattr(pl.col(c), op_name)().alias(
-                        f"{target_op_name}({c})"
+                        f"{target_op_name}({_extract_name_and_from_dfs(c)[0]})"
                     )
-                    for c in self._df.schema
-                    if col_type_validator(self._df.schema[c])
+                    for c in self._df._df.schema
+                    if col_type_validator(self._df._df.schema[c])
                 ]
             )
 
@@ -83,7 +82,10 @@ class GroupedData(object):
                 raise ValueError(
                     "all arguments of aggregate function should be Column"
                 )
-        return DataFrame(self._group_by.agg(*[c._expr for c in map_or_cols]))
+
+        return DataFrame(
+            self._group_by.agg(*[c._build_expr(self._df) for c in map_or_cols])
+        )
 
 
 class DataFrame:
@@ -92,9 +94,12 @@ class DataFrame:
         df: Union[pl.DataFrame, pl.LazyFrame],
         column_names_map: Dict[str, str] = None,
     ):
-        self.column_names_map = column_names_map or {c: c for c in df.columns}
+        self.column_names_map = column_names_map or {}
         self._df: pl.LazyFrame = (
             df if isinstance(df, pl.LazyFrame) else df.lazy()
+        )
+        self._df = self._df.rename(
+            {c: self._joined_col_name(c, self) for c in df.columns}
         )
 
     _IS_SIMPLE_CAST = re.compile(
@@ -102,9 +107,12 @@ class DataFrame:
     )
 
     def select(self, *cols: Union[str, col]):
-        pl_df = self._df.select(
-            *[c._expr if isinstance(c, col) else c for c in cols]
-        )
+        _cols = [
+            col(_identify_column(c, self)) if isinstance(c, str) else c
+            for c in cols
+        ]
+
+        pl_df = self._df.select(*[c._build_expr(self) for c in _cols])
         rename_map = {}
         for c in pl_df.columns:
             m = self._IS_SIMPLE_CAST.match(c)
@@ -114,7 +122,7 @@ class DataFrame:
         return DataFrame(pl_df)
 
     def filter(self, condition: col):
-        return DataFrame(self._df.filter(condition._expr))
+        return DataFrame(self._df.filter(condition._build_expr(self)))
 
     def collect(self):
         row = Row(*self._df.columns)
@@ -123,24 +131,24 @@ class DataFrame:
 
     def toPandas(self):
         df = self._df.collect().to_pandas()
-        df.columns = (
-            [self.column_names_map.get(c, c) for c in df.columns]
-            if self.column_names_map
-            else df.columns
-        )
+        df.columns = [self._extract_name_and_from_dfs(c)[0] for c in df.columns]
         return df
 
     def groupBy(self, *cols: Union[str, col]):
         return GroupedData(
-            self._df.groupby(*[c._expr for c in cols], maintain_order=True),
-            self._df,
+            self._df.groupby(
+                *[c._build_expr(self) for c in cols], maintain_order=True
+            ),
+            self,
         )
 
     def count(self):
         return self._df.collect().shape[0]
 
     def withColumn(self, colName: str, col: col):
-        return DataFrame(self._df.with_columns(col._expr.alias(colName)))
+        return DataFrame(
+            self._df.with_columns(col._build_expr(self).alias(colName))
+        )
 
     def withColumns(self, *colsMap: Dict[str, col]):
         if len(colsMap) != 1:
@@ -148,12 +156,15 @@ class DataFrame:
         colsMap = colsMap[0]
         return DataFrame(
             self._df.with_columns(
-                *[c._expr.alias(n) for n, c in colsMap.items()]
+                *[c._build_expr(self).alias(n) for n, c in colsMap.items()]
             )
         )
 
     def withColumnRenamed(self, existingName: str, newName: str):
-        return DataFrame(self._df.rename({existingName: newName}))
+        _existingName = _identify_column(existingName, self)
+        return DataFrame(
+            self._df.rename({_existingName: newName}),
+        )
 
     def sort(
         self, *cols: Union[str, col], ascending: Union[bool, List[bool]] = None
@@ -181,10 +192,30 @@ class DataFrame:
 
         return DataFrame(
             self._df.sort(
-                *[c._expr if isinstance(c, col) else c for c in cols],
+                *[
+                    c._build_expr(self)
+                    if isinstance(c, col)
+                    else _identify_column(c, self)
+                    for c in cols
+                ],
                 descending=descending,
             )
         )
+
+    def _joined_col_name(self, col_name: str, from_df=None):
+        if from_df is None:
+            return col_name
+        name = col_name
+        if "__#_#_#__" not in name:
+            name += "__#_#_#__"
+        return f"{name}__on_df__{hex(id(from_df))}"
+
+    def _extract_name_and_from_dfs(self, col_name: str) -> Tuple[str, Set[str]]:
+        if "__#_#_#__" not in col_name:
+            return col_name, set()
+        name, from_dfs = col_name.split("__#_#_#__")
+        from_dfs = set(from_dfs.split("__on_df__"))
+        return name, from_dfs
 
     def join(
         self,
@@ -192,6 +223,9 @@ class DataFrame:
         on: Union[str, col, List[Union[str, col]]] = None,
         how="inner",
     ):
+        if isinstance(on, col):
+            return self._join_on_expr(other, on, how)
+
         _EQUIVALENT_HOW = {
             "full": "outer",
             "full_outer": "outer",
@@ -213,95 +247,87 @@ class DataFrame:
         if isinstance(on, str):
             on = [on]
         if isinstance(on, Iterable):
+            on = list(on) if not isinstance(on, (list, tuple)) else on
             if not all([isinstance(c, (str)) for c in on]):
                 raise ValueError(
                     "on should be a string, a list or an Iterable of strings or an expression"
                 )
-        if isinstance(on, col):
-            return self._join_on_expr(other, on, how)
-        suffix = "__on_df__" + hex(id(other))
-        column_names_map = {
-            f"{c}{suffix}": c
-            for c in set(self._df.columns)
-            .difference(
-                [c._name if isinstance(c, col) else c for c in on]
-                if how != "cross"
-                else []
-            )
-            .intersection(other._df.columns)
-        }
 
-        on = [c._expr_no_alias if isinstance(c, col) else c for c in on]
+        left_on = [_identify_column(c, on_df=self) for c in on]
+        right_on = [_identify_column(c, on_df=other) for c in on]
 
         if how == "right" and on:
             joined = other._df.join(
-                self._df, on, how="left", suffix=suffix
-            ).select(
-                on
-                + [c for c in self.columns if c not in on]
-                + [c for c in other.columns if c not in on]
+                self._df,
+                left_on=right_on,
+                right_on=left_on,
+                how="left",
             )
         else:
             if on:
-                joined = self._df.join(other._df, on, how=how, suffix=suffix)
+                joined = self._df.join(
+                    other._df, left_on=left_on, right_on=right_on, how=how
+                )
             elif how not in ["semi", "anti"]:
-                joined = self._df.join(other._df, how="cross", suffix=suffix)
+                joined = self._df.join(other._df, how="cross")
             elif how == "semi":
                 joined = self._df
-            else:
+            else:  # how == "anti"
                 joined = pl.DataFrame([], schema=self._df.schema)
+        if how == "inner" and len(left_on):
+            joined = joined.rename(
+                {c: self._joined_col_name(c, other) for c in left_on}
+            )
         return DataFrame(
             joined,
-            column_names_map=column_names_map,
+            column_names_map={},
         )
 
     def _join_on_expr(self, other: "DataFrame", on: col, how="inner"):
         left_on, right_on, left_condition, right_condition = _breakdown_on_expr(
             on, self, other
         )
-        suffix = "__on_df__" + hex(id(other))
-        column_names_map = {
-            f"{c}{suffix}": c
-            for c in set(self._df.columns).intersection(other._df.columns)
-        }
-        inverted_column_names_map = {v: k for k, v in column_names_map.items()}
-        dfl = (
-            self._df
-            if left_condition is None
-            else self._df.filter(left_condition._expr)
-        )
+        dfl = self if left_condition is None else self.filter(left_condition)
         dfr = (
-            other._df
-            if right_condition is None
-            else other._df.filter(right_condition._expr)
+            other if right_condition is None else other.filter(right_condition)
         )
         if len(left_on) == 0:
             if how not in ["semi", "anti"]:
-                joined = dfl.join(dfr, how="cross")
+                joined = dfl._df.join(dfr._df, how="cross")
             elif how == "semi":
-                joined = dfl
+                joined = dfl._df
             else:
                 joined = pl.DataFrame([], schema=dfl.schema)
         else:
-            dfl = dfl.with_columns(
-                [c._expr.alias(f"join_col_{i}") for i, c in enumerate(left_on)]
+            dfl_df = dfl._df.with_columns(
+                [
+                    c._build_expr(dfl).alias(f"join_col_{i}")
+                    for i, c in enumerate(left_on)
+                ]
             )
-            dfr = dfr.with_columns(
-                [c._expr.alias(f"join_col_{i}") for i, c in enumerate(right_on)]
+            dfr_df = dfr._df.with_columns(
+                [
+                    c._build_expr(dfr).alias(f"join_col_{i}")
+                    for i, c in enumerate(right_on)
+                ]
             )
-            joined = dfl.join(
-                dfr,
-                [f"join_col_{i}" for i in range(len(left_on))],
-                how=how,
-                suffix=suffix,
-            ).drop([f"join_col_{i}" for i in range(len(left_on))])
-        return DataFrame(joined, column_names_map=column_names_map)
+            if how == "right":
+                joined = dfr_df.join(
+                    dfl_df,
+                    [f"join_col_{i}" for i in range(len(right_on))],
+                    how="left",
+                ).drop([f"join_col_{i}" for i in range(len(right_on))])
+            else:
+                joined = dfl_df.join(
+                    dfr_df,
+                    [f"join_col_{i}" for i in range(len(left_on))],
+                    how=how,
+                ).drop([f"join_col_{i}" for i in range(len(left_on))])
+        return DataFrame(joined)
 
     @property
     def columns(self):
-        if self.column_names_map:
-            return [self.column_names_map.get(c, c) for c in self._df.columns]
-        return self._df.columns
+        return [self._extract_name_and_from_dfs(c)[0] for c in self._df.columns]
 
     @property
     def schema(self):
@@ -364,10 +390,12 @@ def _breakdown_on_expr(e: col, dfl, dfr):
     right_conditions = []
 
     if e._op is None:
-        return left_on + [e], right_on + [e], None, None
+        raise ValueError(
+            "Join conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
+        )
     if e._op[-1] not in ["__eq__", "__and__"] and len(_dfs_in_expr(e)) > 1:
         raise ValueError(
-            "Conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
+            "Join conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
         )
     conditions = []
     if e._op[-1] == "__and__":

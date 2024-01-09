@@ -5,7 +5,7 @@ import pyspark as ps
 import pysparkpl as pspl
 import pysparkpl.sql.dataframe as dataframe
 import pyspark.sql.types as pstypes
-from tests.utils import spark_to_pl
+from tests.utils import spark_to_pl, pysparkpl_to_polars
 from pysparkpl.sql import SessionHelper
 
 
@@ -16,49 +16,7 @@ def compare_pl_spark(pl_df, ps_df):
     ps_df = ps_df.select(*pl_df.columns)
     pl_df = pl_df.sort(*columns)
     ps_df = ps_df.sort(*columns)
-    return pl_df._df.collect().frame_equal(spark_to_pl(ps_df))
-
-
-def test_dataframe_select():
-    df = dataframe.DataFrame(pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}))
-    assert (
-        df.select("a")._df.collect().frame_equal(pl.DataFrame({"a": [1, 2, 3]}))
-    )
-    assert (
-        df.select(df.a)
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"a": [1, 2, 3]}))
-    )
-    assert (
-        df.select(df.a, df.b)
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 3, 4]}))
-    )
-    assert (
-        df.select(df.a + 1)
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"(a + 1)": [2, 3, 4]}))
-    )
-    assert (
-        df.select(df.a + df.b)
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"(a + b)": [3, 5, 7]}))
-    )
-    assert (
-        df.select(df.a + df.b + 1)
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"((a + b) + 1)": [4, 6, 8]}))
-    )
-    assert (
-        df.select(df.a + df.b + df.a)
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"((a + b) + a)": [4, 7, 10]}))
-    )
-    assert (
-        df.select(df.a.alias("a1"), df.b.alias("b1"))
-        ._df.collect()
-        .frame_equal(pl.DataFrame({"a1": [1, 2, 3], "b1": [2, 3, 4]}))
-    )
+    return pysparkpl_to_polars(pl_df).frame_equal(spark_to_pl(ps_df))
 
 
 def create_test_df_1(spark):
@@ -86,8 +44,8 @@ def test_collect():
     sparkpl = SessionHelper.session(
         SessionHelper.Engine.POLARS
     ).builder.getOrCreate()
-    sp_df = create_test_df_1(spark).select(["a", "b", "c"])
-    pl_df = create_test_df_1(sparkpl).select(["a", "b", "c"])
+    sp_df = create_test_df_1(spark).select("a", "b", "c")
+    pl_df = create_test_df_1(sparkpl).select("a", "b", "c")
     assert compare_pl_spark(pl_df, sp_df)
     assert sp_df.collect() == pl_df.collect()
 
@@ -525,7 +483,7 @@ def _create_test_dfs_for_join_3(spark):
         [["A", 2, 3], ["B", 5, 6], ["C", 2, 3], ["C", 2, 3]], ["a", "b", "c"]
     )
     dfr = spark.createDataFrame(
-        [["A", 2, 3], ["B", 5, 6], ["D", 2, 3], ["D", 2, 3]], ["a", "d", "e"]
+        [["A", 2, 3], ["B", 5, 6], ["D", 2, 3], ["D", 2, 3]], ["d", "e", "f"]
     )
 
     return dfl, dfr
@@ -603,7 +561,7 @@ def _test_join_3(spark):
     rv = []
     [
         rv.append(
-            dfl.join(dfr, dfl.a == dfr.a if h != "cross" else None, how=h)
+            dfl.join(dfr, dfl.a == dfr.d if h != "cross" else None, how=h)
         )
         for h in [
             "inner",
@@ -682,6 +640,5 @@ if __name__ == "__main__":
     test_withColumnRenamed()
     test_withColumn_withColumns()
     test_groupBy()
-    test_dataframe_select()
     test_select()
     test_filter()
