@@ -630,7 +630,34 @@ def test_join_3():
     run_compare_test(_test_join_3)
 
 
+def test_join_4():
+    pl_spark = SessionHelper.session(
+        SessionHelper.Engine.POLARS
+    ).builder.getOrCreate()
+    spark = SessionHelper.session(
+        SessionHelper.Engine.SPARK
+    ).builder.getOrCreate()
+    pl_dfl = pl_spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+    pl_dfr = pl_spark.createDataFrame([[1, 2], [30, 40]], ["a", "b"])
+    ps_dfl = spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+    ps_dfr = spark.createDataFrame([[1, 2], [30, 40]], ["a", "b"])
+
+    pl_dfj = pl_dfl.join(pl_dfr, pl_dfl.a == pl_dfr.a)
+    ps_dfj = ps_dfl.join(ps_dfr, ps_dfl.a == ps_dfr.a)
+
+    assert compare_pl_spark(
+        pl_dfj.select(pl_dfr.a.alias("c"), pl_dfr.b.alias("d")),
+        ps_dfj.select(ps_dfr.a.alias("c"), ps_dfr.b.alias("d")),
+    )
+
+    assert compare_pl_spark(
+        pl_dfj.select(pl_dfl.a.alias("c"), pl_dfl.b.alias("d")),
+        ps_dfj.select(ps_dfl.a.alias("c"), ps_dfl.b.alias("d")),
+    )
+
+
 if __name__ == "__main__":
+    test_join_4()
     test_collect()
     test_join_3()
     test_join_2()

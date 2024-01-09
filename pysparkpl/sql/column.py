@@ -55,7 +55,9 @@ def _extract_name_and_dfs_from_col_name(col_name: str) -> Tuple[str, Set[str]]:
     return name, from_dfs
 
 
-def _identify_column(col_name: str, on_df=None):
+def _identify_column(
+    col_name: str, on_df=None, raise_if_not_found=True, raise_if_ambigous=True
+):
     name, from_dfs = _extract_name_and_dfs_from_col_name(col_name)
     cols_info = {
         c: _extract_name_and_dfs_from_col_name(c) for c in on_df._df.columns
@@ -74,9 +76,19 @@ def _identify_column(col_name: str, on_df=None):
         if name == v[0] and (v[1].intersection(from_dfs) if from_dfs else True)
     }
     if len(cols_info) == 0:
-        raise ValueError(f"Column {col_name} not found on DataFrame {on_df}")
+        if raise_if_not_found:
+            raise ValueError(
+                f"Column {col_name} not found on DataFrame {on_df}"
+            )
+        else:
+            return False
     if len(cols_info) > 1:
-        raise ValueError(f"Column {col_name} is ambigous on DataFrame {on_df}")
+        if raise_if_ambigous:
+            raise ValueError(
+                f"Column {col_name} is ambigous on DataFrame {on_df}"
+            )
+        else:
+            return True
     return list(cols_info.keys())[0]
 
 

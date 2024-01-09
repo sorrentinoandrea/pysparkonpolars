@@ -372,6 +372,19 @@ def _dfs_in_expr(e: col):
     return set([c._on_df for c in _extract_columns(e) if c._on_df is not None])
 
 
+def _is_expr_on_df(e: col, df: DataFrame):
+    if e._op is None:
+        return bool(
+            _identify_column(
+                e._name, df, raise_if_not_found=False, raise_if_ambigous=False
+            )
+        )
+    matches = []
+    for c in e._op[:-1]:
+        matches.append(isinstance(c, col) and _is_expr_on_df(c, df))
+    return any(matches)
+
+
 def is_cross_condition(e: col):
     return len(_dfs_in_expr(e)) > 1
 
@@ -406,23 +419,29 @@ def _breakdown_on_expr(e: col, dfl, dfr):
         conditions += [e]
 
     for c in conditions:
-        if _dfs_in_expr(c) == set([dfl]):
+        if _is_expr_on_df(e, dfl) and not _is_expr_on_df(e, dfr):
             left_conditions.append(c)
-        elif _dfs_in_expr(c) == set([dfr]):
+        elif _is_expr_on_df(e, dfr) and not _is_expr_on_df(e, dfl):
             right_conditions.append(c)
         else:
             if c._op[-1] != "__eq__":
                 raise ValueError(
                     "Conditions involving both dataframes must be equality conditions, or & of single dataframe conditions or equality conditions"
                 )
-            if _dfs_in_expr(c._op[0]) == set([dfl]) and _dfs_in_expr(
-                c._op[1]
-            ) == set([dfr]):
+            if (
+                _is_expr_on_df(c._op[0], dfl)
+                and (not _is_expr_on_df(c._op[0], dfr))
+                and (_is_expr_on_df(c._op[1], dfr))
+                and (not _is_expr_on_df(c._op[1], dfl))
+            ):
                 left_on.append(c._op[0])
                 right_on.append(c._op[1])
-            elif _dfs_in_expr(c._op[0]) == set([dfr]) and _dfs_in_expr(
-                c._op[1]
-            ) == set([dfl]):
+            elif (
+                _is_expr_on_df(c._op[1], dfl)
+                and (not _is_expr_on_df(c._op[1], dfr))
+                and (_is_expr_on_df(c._op[0], dfr))
+                and (not _is_expr_on_df(c._op[0], dfl))
+            ):
                 left_on.append(c._op[1])
                 right_on.append(c._op[0])
             else:
