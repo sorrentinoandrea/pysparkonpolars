@@ -4,7 +4,11 @@ from collections import Iterable
 import polars as pl
 from pyspark.sql import Row
 from pysparkpl.sql.functions import col
-from pysparkpl.sql.column import _identify_column, _extract_name_and_from_dfs
+from pysparkpl.sql.column import (
+    _identify_column,
+    _extract_name_and_dfs_from_col_name,
+    _joined_col_name,
+)
 import pysparkpl.sql.types as types
 import pyspark.sql.types as pssql_types
 
@@ -40,7 +44,7 @@ class GroupedData(object):
                 if cols
                 else [
                     getattr(pl.col(c), op_name)().alias(
-                        f"{target_op_name}({_extract_name_and_from_dfs(c)[0]})"
+                        f"{target_op_name}({_extract_name_and_dfs_from_col_name(c)[0]})"
                     )
                     for c in self._df._df.schema
                     if col_type_validator(self._df._df.schema[c])
@@ -99,7 +103,7 @@ class DataFrame:
             df if isinstance(df, pl.LazyFrame) else df.lazy()
         )
         self._df = self._df.rename(
-            {c: self._joined_col_name(c, self) for c in df.columns}
+            {c: _joined_col_name(c, self) for c in df.columns}
         )
 
     _IS_SIMPLE_CAST = re.compile(
@@ -131,7 +135,9 @@ class DataFrame:
 
     def toPandas(self):
         df = self._df.collect().to_pandas()
-        df.columns = [self._extract_name_and_from_dfs(c)[0] for c in df.columns]
+        df.columns = [
+            _extract_name_and_dfs_from_col_name(c)[0] for c in df.columns
+        ]
         return df
 
     def groupBy(self, *cols: Union[str, col]):
@@ -202,21 +208,6 @@ class DataFrame:
             )
         )
 
-    def _joined_col_name(self, col_name: str, from_df=None):
-        if from_df is None:
-            return col_name
-        name = col_name
-        if "__#_#_#__" not in name:
-            name += "__#_#_#__"
-        return f"{name}__on_df__{hex(id(from_df))}"
-
-    def _extract_name_and_from_dfs(self, col_name: str) -> Tuple[str, Set[str]]:
-        if "__#_#_#__" not in col_name:
-            return col_name, set()
-        name, from_dfs = col_name.split("__#_#_#__")
-        from_dfs = set(from_dfs.split("__on_df__"))
-        return name, from_dfs
-
     def join(
         self,
         other: "DataFrame",
@@ -276,7 +267,7 @@ class DataFrame:
                 joined = pl.DataFrame([], schema=self._df.schema)
         if how == "inner" and len(left_on):
             joined = joined.rename(
-                {c: self._joined_col_name(c, other) for c in left_on}
+                {c: _joined_col_name(c, other) for c in left_on}
             )
         return DataFrame(
             joined,
@@ -327,7 +318,9 @@ class DataFrame:
 
     @property
     def columns(self):
-        return [self._extract_name_and_from_dfs(c)[0] for c in self._df.columns]
+        return [
+            _extract_name_and_dfs_from_col_name(c)[0] for c in self._df.columns
+        ]
 
     @property
     def schema(self):

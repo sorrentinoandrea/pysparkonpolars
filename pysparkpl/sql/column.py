@@ -47,7 +47,7 @@ def _joined_col_name(col_name: str, from_df=None):
     return f"{name}__on_df__{hex(id(from_df))}"
 
 
-def _extract_name_and_from_dfs(col_name: str) -> Tuple[str, Set[str]]:
+def _extract_name_and_dfs_from_col_name(col_name: str) -> Tuple[str, Set[str]]:
     if "__#_#_#__" not in col_name:
         return col_name, set()
     name, from_dfs = col_name.split("__#_#_#__")
@@ -56,8 +56,10 @@ def _extract_name_and_from_dfs(col_name: str) -> Tuple[str, Set[str]]:
 
 
 def _identify_column(col_name: str, on_df=None):
-    name, from_dfs = _extract_name_and_from_dfs(col_name)
-    cols_info = {c: _extract_name_and_from_dfs(c) for c in on_df._df.columns}
+    name, from_dfs = _extract_name_and_dfs_from_col_name(col_name)
+    cols_info = {
+        c: _extract_name_and_dfs_from_col_name(c) for c in on_df._df.columns
+    }
     if on_df is None or len(from_dfs) == 0:
         cols_info = {k: v for k, v in cols_info.items() if col_name == v[0]}
         if len(cols_info) == 0:
@@ -211,7 +213,7 @@ class Column:
 
     def _build_display_name(self):
         if self._op is None:
-            return _extract_name_and_from_dfs(self._name)[0]
+            return _extract_name_and_dfs_from_col_name(self._name)[0]
         n = _EXPR_COL_NAME_BUILDERS[self._op[-1]](self._op)
         return n
 
