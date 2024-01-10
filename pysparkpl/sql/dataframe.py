@@ -214,9 +214,6 @@ class DataFrame:
         on: Union[str, col, List[Union[str, col]]] = None,
         how="inner",
     ):
-        if isinstance(on, col):
-            return self._join_on_expr(other, on, how)
-
         _EQUIVALENT_HOW = {
             "full": "outer",
             "full_outer": "outer",
@@ -232,6 +229,8 @@ class DataFrame:
         }
 
         how = _EQUIVALENT_HOW.get(how, how)
+        if isinstance(on, col):
+            return self._join_on_expr(other, on, how)
 
         if on is None:
             on = []
@@ -323,7 +322,22 @@ class DataFrame:
         return DataFrame(joined)
 
     def _join_on_expr_with_cross_join(self, other, on: col, how="inner"):
-        return self.join(other, how="cross").filter(on)
+        rv = self.join(other, how="cross")
+        if how == "anti":
+            rv = rv.filter(on)
+            rv = rv.select(*[self[c] for c in self.columns])
+            rv = self.join(rv, self.columns, how="anti")
+        elif how == "semi":
+            rv = rv.filter(on)
+            rv = rv.select(*[self[c] for c in self.columns])
+            rv = self.join(rv, self.columns, how="semi")
+        elif how == "inner":
+            rv = rv.filter(on)
+        else:
+            raise ValueError(
+                "Only inner, semi and anti joins are supported on joins with not conditions other than equality"
+            )
+        return rv
 
     @property
     def columns(self):

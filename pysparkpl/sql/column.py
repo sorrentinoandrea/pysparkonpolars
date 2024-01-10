@@ -114,7 +114,7 @@ _EXPR_BUILDERS = {
     "__pow__": lambda op, df: op[0]._build_expr(df)
     ** _expr_or_const(op[1], df),
     "__neg__": lambda op, df: -op[0]._build_expr(df),
-    "__invert__": lambda op, df: ~op[0]._build_expr(df),
+    "__invert__": lambda op, df: ~(op[0]._build_expr(df)),
     "__and__": lambda op, df: op[0]._build_expr(df) & _expr_or_const(op[1], df),
     "__or__": lambda op, df: op[0]._build_expr(df) | _expr_or_const(op[1], df),
     "__gt__": lambda op, df: op[0]._build_expr(df) > _expr_or_const(op[1], df),

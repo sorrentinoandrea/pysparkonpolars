@@ -646,31 +646,65 @@ def test_join_4():
     ps_dfj = ps_dfl.join(ps_dfr, ps_dfl.a == ps_dfr.a)
 
     assert compare_pl_spark(
-        pl_dfj.select(pl_dfr.a.alias("c"), pl_dfr.b.alias("d")),
-        ps_dfj.select(ps_dfr.a.alias("c"), ps_dfr.b.alias("d")),
-    )
-
-    assert compare_pl_spark(
-        pl_dfj.select(pl_dfl.a.alias("c"), pl_dfl.b.alias("d")),
-        ps_dfj.select(ps_dfl.a.alias("c"), ps_dfl.b.alias("d")),
+        pl_dfj.select(
+            pl_dfl.a, pl_dfl.b, pl_dfr.a.alias("c"), pl_dfr.b.alias("d")
+        ),
+        ps_dfj.select(
+            ps_dfl.a, ps_dfl.b, ps_dfr.a.alias("c"), ps_dfr.b.alias("d")
+        ),
     )
 
     assert compare_pl_spark(
         pl_dfl.join(pl_dfr, pl_dfl.a > pl_dfr.a, how="inner").select(
-            pl_dfl.a.alias("c"), pl_dfl.b.alias("d")
+            pl_dfl.a, pl_dfl.b, pl_dfr.a.alias("c"), pl_dfr.b.alias("d")
         ),
         ps_dfl.join(ps_dfr, ps_dfl.a > ps_dfr.a, how="inner").select(
-            ps_dfl.a.alias("c"), ps_dfl.b.alias("d")
+            ps_dfl.a, ps_dfl.b, ps_dfr.a.alias("c"), ps_dfr.b.alias("d")
         ),
     )
 
     assert compare_pl_spark(
-        pl_dfl.join(pl_dfr, pl_dfl.a >= pl_dfr.a, how="inner").select(
-            pl_dfl.a.alias("c"), pl_dfl.b.alias("d")
+        pl_dfl.join(pl_dfr, pl_dfl.a <= pl_dfr.a, how="inner").select(
+            pl_dfl.a, pl_dfl.b, pl_dfr.a.alias("c"), pl_dfr.b.alias("d")
         ),
-        ps_dfl.join(ps_dfr, ps_dfl.a >= ps_dfr.a, how="inner").select(
-            ps_dfl.a.alias("c"), ps_dfl.b.alias("d")
+        ps_dfl.join(ps_dfr, ps_dfl.a <= ps_dfr.a, how="inner").select(
+            ps_dfl.a, ps_dfl.b, ps_dfr.a.alias("c"), ps_dfr.b.alias("d")
         ),
+    )
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a < pl_dfr.a, how="semi"),
+        ps_dfl.join(ps_dfr, ps_dfl.a < ps_dfr.a, how="semi"),
+    )
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a <= pl_dfr.a, how="semi"),
+        ps_dfl.join(ps_dfr, ps_dfl.a <= ps_dfr.a, how="semi"),
+    )
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a < pl_dfr.a, how="anti"),
+        ps_dfl.join(ps_dfr, ps_dfl.a < ps_dfr.a, how="anti"),
+    )
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a <= pl_dfr.a, how="anti"),
+        ps_dfl.join(ps_dfr, ps_dfl.a <= ps_dfr.a, how="anti"),
+    )
+
+    pl_dfl = pl_spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+    pl_dfr = pl_spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+    ps_dfl = spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+    ps_dfr = spark.createDataFrame([[1, 2], [3, 4]], ["a", "b"])
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a < pl_dfr.a, how="semi"),
+        ps_dfl.join(ps_dfr, ps_dfl.a < ps_dfr.a, how="semi"),
+    )
+
+    assert compare_pl_spark(
+        pl_dfl.join(pl_dfr, pl_dfl.a < pl_dfr.a, how="anti"),
+        ps_dfl.join(ps_dfr, ps_dfl.a < ps_dfr.a, how="anti"),
     )
 
 
